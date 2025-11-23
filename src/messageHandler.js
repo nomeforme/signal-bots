@@ -141,8 +141,6 @@ export function detectMentionsInText(text, groupId = null) {
 
 export function getHelpMessage(privacyMode) {
     const modelsList = config.VALID_MODELS.join('\n  ');
-    const promptsList = Object.keys(config.SYSTEM_INSTRUCTIONS).join('\n  ');
-    const sizesList = Object.keys(config.IMAGE_SIZES).join('\n  ');
 
     let privacyHelp;
     if (privacyMode === 'opt-in') {
@@ -160,11 +158,8 @@ export function getHelpMessage(privacyMode) {
     return `
 📋 Available Commands:
 - !help: Show this help message
-- !cp <number>: Change system prompt
 - !cm <number>: Change AI model
 - !cup <text>: Set a custom system prompt
-- !im <prompt>: Generate an image
-- !is <number>: Change image size
 - !privacy <opt-in|opt-out>: Change privacy mode for this chat
 - @mention + !rr <number>: Set random reply chance (0=off, 1=100%, 10=10%, etc.)
 
@@ -172,12 +167,6 @@ ${privacyHelp}
 
 🤖 Available Models:
   ${modelsList}
-
-💭 System Prompts:
-  ${promptsList}
-
-📐 Image Sizes:
-  ${sizesList}
 `;
 }
 
