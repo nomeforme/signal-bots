@@ -664,8 +664,21 @@ export async function processMessage(message, botPhone = null, isFirstReceiver =
     const senderUuid = envelope.sourceUuid;
     const senderName = envelope.sourceName || '';
     const timestamp = new Date(envelope.timestamp);
-    const content = dataMessage.message || '';
+    let content = dataMessage.message || '';
     const attachments = dataMessage.attachments || [];
+
+    // Handle empty messages (e.g., image-only messages)
+    if (!content && !attachments.length) {
+        return;
+    }
+
+    // Clean content: Remove object replacement character (￼) that Signal adds for @mentions
+    // and strip whitespace
+    content = content.replace(/\ufffc/g, '').trim();
+
+    if (!content && !attachments.length) {
+        return;
+    }
 
     // Cache sender name -> phone mapping
     if (senderName && sender) {
