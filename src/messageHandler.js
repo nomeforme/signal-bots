@@ -835,22 +835,25 @@ export async function processMessage(message, botPhone = null, isFirstReceiver =
         shouldRespond = true;
     }
 
-    // Handle commands
-    if (command === '!help') {
+    // Handle commands - in group chats, only execute if bot is mentioned
+    // In DMs, always execute commands
+    const shouldExecuteCommand = !isGroupChat || shouldRespond;
+
+    if (command === '!help' && shouldExecuteCommand) {
         await user.sendMessage(getHelpMessage(user.privacyMode));
-    } else if (command === '!cp') {
+    } else if (command === '!cp' && shouldExecuteCommand) {
         handleChangePromptCmd(user, args);
-    } else if (command === '!cm') {
+    } else if (command === '!cm' && shouldExecuteCommand) {
         handleChangeModelCmd(user, args);
-    } else if (command === '!cup') {
+    } else if (command === '!cup' && shouldExecuteCommand) {
         handleCustomPromptCmd(user, args);
-    } else if (command === '!im' && user.trusted) {
+    } else if (command === '!im' && user.trusted && shouldExecuteCommand) {
         await handleGenerateImageCmd(user, args);
-    } else if (command === '!is') {
+    } else if (command === '!is' && shouldExecuteCommand) {
         handleImageSizeCmd(user, args);
-    } else if (command === '!privacy') {
+    } else if (command === '!privacy' && shouldExecuteCommand) {
         handlePrivacyCmd(user, args);
-    } else if (command === '!rr' && botMentioned) {
+    } else if (command === '!rr' && shouldExecuteCommand) {
         handleRandomReplyCmd(user, args);
     } else {
         await handleAiMessage(user, content, attachments, senderName, shouldRespond, isFirstReceiver);
