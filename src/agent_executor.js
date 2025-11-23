@@ -22,6 +22,18 @@ export async function executeAgentTurn(client, agent, messages, maxToolRounds = 
     let toolRounds = 0;
 
     while (toolRounds < maxToolRounds) {
+        // Ensure messages don't end with assistant message (which would be pre-filling)
+        // Some models don't support pre-filling when tools are enabled
+        if (agent.tools && agent.tools.length > 0) {
+            if (workingMessages.length > 0 && workingMessages[workingMessages.length - 1].role === 'assistant') {
+                // Add an empty user message to avoid pre-filling error
+                workingMessages.push({
+                    role: 'user',
+                    content: [{ type: 'text', text: '[continue]' }]
+                });
+            }
+        }
+
         // Prepare API call
         const apiParams = {
             model: agent.model,
