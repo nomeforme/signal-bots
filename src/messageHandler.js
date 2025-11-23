@@ -718,14 +718,15 @@ export async function processMessage(message, botPhone = null, isFirstReceiver =
         console.log(`Received message from ${displaySender} (${sender}) at ${timestamp}: ${content}`);
     }
 
-    // Parse command
+    // Parse command if there's text content (BEFORE privacy filtering)
     let command = '';
     let args = '';
-    if (content.startsWith('!')) {
-        const parts = content.split(' ');
-        command = parts[0];
-        args = parts.slice(1).join(' ');
+    if (content) {
+        const parts = content.split(/\s+/);
+        command = parts[0].toLowerCase();
+        args = parts.slice(1).join(' ').trim();
     } else if (!content && attachments.length > 0) {
+        // No text, but has attachments - treat as AI message
         command = '';
         args = '';
     }
@@ -765,42 +766,51 @@ export async function processMessage(message, botPhone = null, isFirstReceiver =
         }
     }
 
-    // Apply privacy filtering
+    // Apply privacy filtering for group chats
     let shouldRespond = false;
-    let storeInHistory = false;
 
     if (isGroupChat) {
+        const isCommand = content.startsWith('!');
+
         if (senderIsBot) {
-            // Bot messages always get stored and processed
-            storeInHistory = true;
+            // Bot messages always get stored and processed, regardless of privacy settings
             shouldRespond = botMentioned;
         } else {
             // Human messages: apply privacy filtering
             if (user.privacyMode === 'opt-in') {
-                storeInHistory = content.startsWith('.') || botMentioned;
+                // Opt-in mode: Only store if prefixed with "." OR bot is mentioned
+                const storeInHistory = content.startsWith('.') || botMentioned;
+                // Only respond if bot is mentioned (this includes commands)
                 shouldRespond = botMentioned;
 
                 if (!storeInHistory) return;
 
+                // If message starts with ".", remove the prefix for processing
                 if (content.startsWith('.')) {
                     content = content.substring(1).trim();
                 }
             } else {
-                // opt-out mode
-                if (content.startsWith('.')) return;
+                // Opt-out mode: Store all messages UNLESS prefixed with "."
+                if (content.startsWith('.')) {
+                    // User explicitly opted out of this message
+                    return;
+                }
 
-                storeInHistory = true;
+                // Store all other messages (commands, mentions, and regular messages)
+                // Only respond if bot is mentioned (this includes commands)
                 shouldRespond = botMentioned;
             }
         }
 
-        // Random reply feature
+        // Random reply feature: Give bot a chance to respond even when not mentioned
         if (!shouldRespond && config.RANDOM_REPLY_CHANCE > 0) {
+            // If sender is a bot, check if we've already hit the interaction limit
             if (senderIsBot && user.isBotLoopLimitReached()) {
                 console.log(`[BOT LOOP PREVENTION] ⚠ Random reply skipped - interaction limit reached (${user.botInteractionCount}/${config.MAX_BOT_MENTIONS_PER_CONVERSATION})`);
             } else if (Math.floor(Math.random() * config.RANDOM_REPLY_CHANCE) + 1 === 1) {
                 shouldRespond = true;
                 console.log(`DEBUG - Random reply triggered for ${botPhone} (1/${config.RANDOM_REPLY_CHANCE} chance)`);
+                // If this is a random reply to a bot message, increment the interaction counter
                 if (senderIsBot) {
                     user.incrementBotInteractionCounter();
                     console.log(`[BOT LOOP PREVENTION] Random reply to bot message. Count: ${user.botInteractionCount}/${config.MAX_BOT_MENTIONS_PER_CONVERSATION}`);
