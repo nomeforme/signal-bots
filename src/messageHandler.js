@@ -669,7 +669,23 @@ mention their name in your response (with @participant).`;
                     let workingMessages = [...bedrockConversation];
 
                     while (toolRounds < maxToolRounds) {
-                        bedrockBody.messages = workingMessages;
+                        // Ensure messages don't end with assistant message (which would be pre-filling)
+                        // Some models don't support pre-filling when tools are enabled
+                        let apiMessages = workingMessages;
+                        if (toolsEnabled.length > 0) {
+                            if (workingMessages.length > 0 && workingMessages[workingMessages.length - 1].role === 'assistant') {
+                                // Add an empty user message temporarily for this API call only
+                                apiMessages = [
+                                    ...workingMessages,
+                                    {
+                                        role: 'user',
+                                        content: [{ type: 'text', text: '[continue]' }]
+                                    }
+                                ];
+                            }
+                        }
+
+                        bedrockBody.messages = apiMessages;
 
                         const params = {
                             modelId: bedrockModelId,
