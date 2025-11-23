@@ -371,12 +371,20 @@ export async function handleAiMessage(user, content, attachments, senderName = n
             if (attachmentData) {
                 if (isClaude) {
                     // Claude expects base64-encoded images
-                    const base64Data = attachmentData.toString('base64');
+                    // Use sharp to detect format and re-encode properly
+                    const image = sharp(attachmentData);
+                    const metadata = await image.metadata();
+                    const format = metadata.format || 'png';
+
+                    // Re-encode the image to ensure it matches the format
+                    const processedImageBuffer = await image.toFormat(format).toBuffer();
+                    const base64Data = processedImageBuffer.toString('base64');
+
                     imageContents.push({
                         type: 'image',
                         source: {
                             type: 'base64',
-                            media_type: 'image/png',
+                            media_type: `image/${format}`,
                             data: base64Data
                         }
                     });
