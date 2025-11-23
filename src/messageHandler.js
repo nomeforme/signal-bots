@@ -503,7 +503,7 @@ export async function handleAiMessage(user, content, attachments, senderName = n
                 // Build system prompt
                 const cleanModelName = getCleanModelName(modelName);
                 const identityContext = `Your model identifier is [${cleanModelName}].
-Always use this when asked about your identity.`;
+Always use this when asked about your identity. Please never prefix your response with [${cleanModelName}]`;
 
                 let systemPrompt;
                 const signalFormatting = `Signal supports these text formatting options:
@@ -641,6 +641,10 @@ mention their name in your response (with @participant).`;
                     const textContent = response.content.find(c => c.type === 'text');
                     aiResponse = textContent ? textContent.text : '';
                 }
+
+                // Strip any [model-name]: prefix that the LLM might have added
+                // This happens because we add it to history for identification, but LLMs sometimes echo it
+                aiResponse = aiResponse.replace(/^\[[\w\-]+\]:\s*/, '').trim();
 
                 // Detect and convert mentions in the response
                 const [modifiedResponse, mentions] = detectMentionsInText(aiResponse, user.groupId);
