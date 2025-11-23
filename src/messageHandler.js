@@ -678,7 +678,13 @@ export async function processMessage(message, botPhone = null, isFirstReceiver =
     let groupId = null;
 
     if (isGroupChat) {
-        groupId = groupInfo.groupId;
+        // Convert internal group ID to proper Signal API group ID
+        const internalGroupId = groupInfo.groupId;
+        groupId = await getGroupIdFromInternal(internalGroupId, botPhone);
+        if (!groupId) {
+            // Fallback if conversion fails
+            groupId = internalGroupId;
+        }
     }
 
     // Check if bot is mentioned
