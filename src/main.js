@@ -19,6 +19,7 @@ function createMessageHandler(botPhone) {
             const message = JSON.parse(data);
             const envelope = message.envelope || {};
             const source = envelope.source || envelope.sourceNumber || 'unknown';
+            const sourceUuid = envelope.sourceUuid || '';
             const timestamp = envelope.timestamp || 'unknown';
             const dataMessage = envelope.dataMessage || {};
 
@@ -27,8 +28,9 @@ function createMessageHandler(botPhone) {
             if (dataMessage && timestamp !== 'unknown') {
                 // Check if this is a user message (not from a bot)
                 let isBotMessage = false;
-                for (const state of Object.values(websocketState)) {
-                    if (source === state.botName || source === botPhone) {
+                for (const bot of config.BOT_INSTANCES) {
+                    const botUuid = getBotUuid(bot.phone);
+                    if (source === bot.phone || (botUuid && sourceUuid === botUuid)) {
                         isBotMessage = true;
                         break;
                     }
