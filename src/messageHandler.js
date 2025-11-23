@@ -710,7 +710,12 @@ mention their name in your response (with @participant).`;
 
                     if (toolsEnabled.length > 0) {
                         // Agent has tools - use agent executor
-                        const agent = createAgentFromConfig(botConfig, systemPrompt);
+                        // Create modified config with cleaned model name
+                        const agentConfig = {
+                            ...botConfig,
+                            model: modelName  // Use cleaned model name without prefix
+                        };
+                        const agent = createAgentFromConfig(agentConfig, systemPrompt);
 
                         // Execute agent turn with tool support
                         const [response, updatedMessages] = await executeAgentTurn(
