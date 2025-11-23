@@ -8,6 +8,8 @@ import AWS from 'aws-sdk';
 import sharp from 'sharp';
 import * as config from './config.js';
 import { User } from './user.js';
+import { createAgentFromConfig } from './agent.js';
+import { executeAgentTurn } from './agent_executor.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -613,33 +615,125 @@ mention their name in your response (with @participant).`;
                     const bedrockBody = {
                         anthropic_version: 'bedrock-2023-05-31',
                         max_tokens: 4096,
-                        messages: bedrockConversation,
                         system: systemPrompt
                     };
 
-                    const params = {
-                        modelId: bedrockModelId,
-                        body: JSON.stringify(bedrockBody),
-                        contentType: 'application/json',
-                        accept: 'application/json'
-                    };
+                    // Add tools if enabled (Bedrock supports same format as Anthropic)
+                    const botConfig = config.BOT_CONFIGS[user.botPhone] || {};
+                    const toolsEnabled = botConfig.tools || [];
+                    let agent = null;
 
-                    const response = await bedrockClient.invokeModel(params).promise();
-                    const responseBody = JSON.parse(response.body.toString());
+                    if (toolsEnabled.length > 0) {
+                        agent = createAgentFromConfig(botConfig, systemPrompt);
+                        bedrockBody.tools = agent.getAnthropicTools();
+                    }
 
-                    const textContent = responseBody.content.find(c => c.type === 'text');
-                    aiResponse = textContent ? textContent.text : '';
+                    // Handle tool use loop for Bedrock
+                    const maxToolRounds = 5;
+                    let toolRounds = 0;
+                    let workingMessages = [...bedrockConversation];
+
+                    while (toolRounds < maxToolRounds) {
+                        bedrockBody.messages = workingMessages;
+
+                        const params = {
+                            modelId: bedrockModelId,
+                            body: JSON.stringify(bedrockBody),
+                            contentType: 'application/json',
+                            accept: 'application/json'
+                        };
+
+                        const response = await bedrockClient.invokeModel(params).promise();
+                        const responseBody = JSON.parse(response.body.toString());
+
+                        const stopReason = responseBody.stop_reason;
+
+                        if (stopReason === 'tool_use' && toolsEnabled.length > 0) {
+                            // Extract tool use and execute
+                            const toolResults = [];
+                            for (const block of responseBody.content) {
+                                if (block.type === 'tool_use') {
+                                    const toolName = block.name;
+                                    const toolInput = block.input;
+                                    const toolId = block.id;
+
+                                    // Execute tool
+                                    const result = await agent.executeTool(toolName, toolInput);
+
+                                    toolResults.push({
+                                        type: 'tool_result',
+                                        tool_use_id: toolId,
+                                        content: result
+                                    });
+                                }
+                            }
+
+                            // Add assistant response with tool use
+                            workingMessages.push({
+                                role: 'assistant',
+                                content: responseBody.content
+                            });
+
+                            // Add tool results
+                            workingMessages.push({
+                                role: 'user',
+                                content: toolResults
+                            });
+
+                            toolRounds++;
+                            continue;
+                        }
+
+                        // Extract final text response
+                        const textParts = [];
+                        for (const block of responseBody.content) {
+                            if (block.type === 'text') {
+                                textParts.push(block.text);
+                            }
+                        }
+
+                        if (textParts.length > 0) {
+                            aiResponse = textParts.join('\n');
+                        } else {
+                            aiResponse = `Sorry, I couldn't generate a response. Stop reason: ${stopReason || 'unknown'}. Response content: ${JSON.stringify(responseBody.content)}`;
+                        }
+                        break;
+                    }
+
+                    if (toolRounds >= maxToolRounds) {
+                        aiResponse = 'Sorry, I got stuck in a tool use loop.';
+                    }
                 } else {
-                    // Use Anthropic API
-                    const response = await anthropicClient.messages.create({
-                        model: modelName,
-                        max_tokens: 4096,
-                        system: systemPrompt,
-                        messages: conversationHistory
-                    });
+                    // Use Anthropic API with agent system
+                    const botConfig = config.BOT_CONFIGS[user.botPhone] || {};
+                    const toolsEnabled = botConfig.tools || [];
 
-                    const textContent = response.content.find(c => c.type === 'text');
-                    aiResponse = textContent ? textContent.text : '';
+                    if (toolsEnabled.length > 0) {
+                        // Agent has tools - use agent executor
+                        const agent = createAgentFromConfig(botConfig, systemPrompt);
+
+                        // Execute agent turn with tool support
+                        const [response, updatedMessages] = await executeAgentTurn(
+                            anthropicClient,
+                            agent,
+                            conversationHistory
+                        );
+
+                        aiResponse = response;
+                        // Update conversation history with tool calls
+                        conversationHistory = updatedMessages;
+                    } else {
+                        // No tools - use simple API call
+                        const response = await anthropicClient.messages.create({
+                            model: modelName,
+                            max_tokens: 4096,
+                            system: systemPrompt,
+                            messages: conversationHistory
+                        });
+
+                        const textContent = response.content.find(c => c.type === 'text');
+                        aiResponse = textContent ? textContent.text : '';
+                    }
                 }
 
                 // Strip any [model-name]: prefix that the LLM might have added
