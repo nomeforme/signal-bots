@@ -1,0 +1,49 @@
+services:
+  # Signal CLI REST API
+  signal-api:
+    image: bbernhard/signal-cli-rest-api:latest
+    container_name: signal-api-js
+    ports:
+      - "8081:8080"
+    volumes:
+      # Mount signal-cli data directory to persist accounts
+      - ${HOME}/.local/share/signal-api:/home/.local/share/signal-cli
+    environment:
+      - MODE=json-rpc
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/about"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # Node.js Bot
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: signal-bot-js
+    depends_on:
+      signal-api:
+        condition: service_healthy
+    volumes:
+      # Mount source code for live editing
+      - ./src:/app/src:ro
+      # Mount config files
+      - ./config.json:/app/config.json:ro
+      - ./.env:/app/.env:ro
+      # Mount signal-cli data directory to access accounts.json (read-only)
+      - ${HOME}/.local/share/signal-api:/home/.local/share/signal-api:ro
+    environment:
+      - NODE_ENV=production
+      # Override URLs to use container network
+      - WS_BASE_URL=ws://signal-api:8080
+      - HTTP_BASE_URL=http://signal-api:8080
+    restart: unless-stopped
+    networks:
+      - default
+
+networks:
+  default:
+    driver: bridge
