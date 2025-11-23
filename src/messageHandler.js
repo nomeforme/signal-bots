@@ -32,6 +32,48 @@ export const botUuidCache = {}; // Cache for bot phone -> UUID mapping
 export const groupHistories = {}; // Shared conversation history for group chats
 export const userNameToPhone = {}; // Cache for mapping display names to phone numbers
 
+/**
+ * Clean model name for display in identity context
+ * Removes date suffix, 'claude-' prefix, and 'bedrock-' prefix
+ * Special case: bedrock-claude-3-5-sonnet-20241022 -> 3-6-sonnet
+ *
+ * Examples:
+ * - claude-haiku-4-5-20251001 -> haiku-4-5
+ * - claude-sonnet-4-5-20250929 -> sonnet-4-5
+ * - bedrock-claude-3-5-sonnet-20240620 -> 3-5-sonnet
+ * - bedrock-claude-3-5-sonnet-20241022 -> 3-6-sonnet
+ */
+export function getCleanModelName(modelName) {
+    // Special case for bedrock-claude-3-5-sonnet-20241022 (3.6)
+    if (modelName === 'bedrock-claude-3-5-sonnet-20241022') {
+        return '3-6-sonnet';
+    }
+
+    // Remove date suffix (last segment if it's all digits)
+    let parts = modelName.split('-');
+    if (parts[parts.length - 1].match(/^\d+$/)) {
+        parts = parts.slice(0, -1);
+    }
+
+    let cleanName = parts.join('-');
+
+    // Remove 'claude-' prefix
+    if (cleanName.startsWith('claude-')) {
+        cleanName = cleanName.substring('claude-'.length);
+    }
+
+    // Remove 'bedrock-claude-' prefix
+    if (cleanName.startsWith('bedrock-claude-')) {
+        cleanName = cleanName.substring('bedrock-claude-'.length);
+    }
+    // Remove 'bedrock-' prefix (for non-Claude bedrock models)
+    else if (cleanName.startsWith('bedrock-')) {
+        cleanName = cleanName.substring('bedrock-'.length);
+    }
+
+    return cleanName || modelName;
+}
+
 export function getBotUuid(botPhone) {
     if (botUuidCache[botPhone]) {
         return botUuidCache[botPhone];
@@ -459,7 +501,7 @@ export async function handleAiMessage(user, content, attachments, senderName = n
                 }
 
                 // Build system prompt
-                const cleanModelName = modelName.split('-').slice(0, -1).join('-') || modelName;
+                const cleanModelName = getCleanModelName(modelName);
                 const identityContext = `Your model identifier is [${cleanModelName}].
 Always use this when asked about your identity.`;
 
