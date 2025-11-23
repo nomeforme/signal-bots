@@ -247,6 +247,12 @@ export async function getGroupMembers(groupId, botPhone) {
         const response = await axios.get(url);
         const groupInfo = response.data;
 
+        // Get bot names from config (by both phone and UUID)
+        const botNamesByPhone = {};
+        for (const bot of config.BOT_INSTANCES) {
+            botNamesByPhone[bot.phone] = bot.name;
+        }
+
         // Build UUID to bot name mapping
         const botNamesByUuid = {};
         for (const bot of config.BOT_INSTANCES) {
@@ -258,24 +264,53 @@ export async function getGroupMembers(groupId, botPhone) {
 
         const participants = [];
         for (const member of (groupInfo.members || [])) {
+            let memberName = null;
+
             if (typeof member === 'string') {
                 // Member is a UUID or phone number string
                 if (member.startsWith('+')) {
-                    // Phone number - use last 4 digits
-                    participants.push(`${member.slice(-4)}`);
+                    // It's a phone number
+                    if (botNamesByPhone[member]) {
+                        memberName = botNamesByPhone[member];
+                    } else {
+                        // Check cached display names (reverse lookup)
+                        for (const [name, phone] of Object.entries(userNameToPhone)) {
+                            if (phone === member) {
+                                memberName = name;
+                                break;
+                            }
+                        }
+                        if (!memberName) {
+                            memberName = member; // Use phone number as fallback
+                        }
+                    }
                 } else {
-                    // UUID - check if it's a bot
+                    // It's a UUID
                     if (botNamesByUuid[member]) {
-                        participants.push(botNamesByUuid[member]);
+                        memberName = botNamesByUuid[member];
                     } else {
                         // Unknown UUID - show shortened version
-                        participants.push(`${member.substring(0, 8)}...`);
+                        memberName = `User-${member.substring(0, 8)}`;
                     }
                 }
             } else if (typeof member === 'object') {
-                // Member is an object with profile info
-                const name = member.profile_name || member.number || member.uuid || 'Unknown';
-                participants.push(name);
+                // Member is a dict with profile info
+                const memberUuid = member.uuid;
+                const memberNumber = member.number;
+
+                // Check if it's a bot first
+                if (memberUuid && botNamesByUuid[memberUuid]) {
+                    memberName = botNamesByUuid[memberUuid];
+                } else if (memberNumber && botNamesByPhone[memberNumber]) {
+                    memberName = botNamesByPhone[memberNumber];
+                } else {
+                    // Use profile name or number
+                    memberName = member.profile_name || memberNumber || 'Unknown';
+                }
+            }
+
+            if (memberName) {
+                participants.push(memberName);
             }
         }
 
@@ -504,7 +539,7 @@ export async function handleAiMessage(user, content, attachments, senderName = n
 
                 // Build system prompt
                 const cleanModelName = getCleanModelName(modelName);
-                const identityContext = `Your model identifier is [${cleanModelName}].
+                const identityContext = `You are Claude. Additionally, your model identifier is [${cleanModelName}].
 Always use this when asked about your identity. Please never prefix your response with [${cleanModelName}]`;
 
                 let systemPrompt;
