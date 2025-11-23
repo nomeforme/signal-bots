@@ -3,10 +3,10 @@ import * as config from './config.js';
 import { processMessage, getBotUuid } from './messageHandler.js';
 
 // Global state for tracking WebSocket health
-const websocketState = {}; // {bot_phone: {"ws": ws, "lastMessage": timestamp, "connected": bool, "retryCount": int}}
+const websocketState = {}; // {bot_phone: {"ws": ws, "lastMessage": timestamp, "connected": bool, "retryCount": int, "firstReconnectAttempt": timestamp}}
 const lastUserMessage = {}; // Track last user message
 const pendingMessages = {}; // Messages to re-process after reconnection
-const MAX_RECONNECT_RETRIES = 3;
+const MAX_RECONNECT_TIME = 5 * 60 * 1000; // 5 minutes
 
 function createMessageHandler(botPhone) {
     return async (data) => {
@@ -101,6 +101,7 @@ function createWebSocket(botPhone, botName) {
             websocketState[botPhone].connected = true;
             websocketState[botPhone].lastMessage = Date.now();
             websocketState[botPhone].retryCount = 0;
+            websocketState[botPhone].firstReconnectAttempt = null;
         }
 
         // Process any pending messages
@@ -132,9 +133,11 @@ function createWebSocket(botPhone, botName) {
             websocketState[botPhone].connected = false;
         }
 
-        // Attempt reconnection
-        console.log(`[${botPhone}] Attempting to reconnect...`);
-        setTimeout(() => reconnectWebSocket(botPhone, botName), 1000);
+        // Attempt reconnection with exponential backoff
+        const retryCount = websocketState[botPhone]?.retryCount || 0;
+        const backoffDelay = Math.min(1000 * Math.pow(2, retryCount), 30000); // 1s, 2s, 4s, 8s, 16s, max 30s
+        console.log(`[${botPhone}] Attempting to reconnect in ${backoffDelay}ms...`);
+        setTimeout(() => reconnectWebSocket(botPhone, botName), backoffDelay);
     });
 
     return ws;
@@ -151,16 +154,28 @@ function reconnectWebSocket(botPhone, botName) {
         return;
     }
 
+    const now = Date.now();
     const retryCount = websocketState[botPhone].retryCount || 0;
 
-    if (retryCount >= MAX_RECONNECT_RETRIES) {
-        console.error(`[${botPhone}] Max reconnection attempts (${MAX_RECONNECT_RETRIES}) reached. Giving up.`);
+    // Track first reconnection attempt
+    if (retryCount === 0) {
+        websocketState[botPhone].firstReconnectAttempt = now;
+    }
+
+    // Check if we've exceeded max reconnection time
+    const firstAttemptTime = websocketState[botPhone].firstReconnectAttempt || now;
+    const elapsedTime = now - firstAttemptTime;
+
+    if (elapsedTime >= MAX_RECONNECT_TIME) {
+        console.error(`[${botPhone}] Max reconnection time (5 minutes) exceeded. Giving up.`);
         websocketState[botPhone].retryCount = 0;
+        websocketState[botPhone].firstReconnectAttempt = null;
         return;
     }
 
     websocketState[botPhone].retryCount = retryCount + 1;
-    console.log(`[${botPhone}] Reconnecting WebSocket (attempt ${websocketState[botPhone].retryCount}/${MAX_RECONNECT_RETRIES})...`);
+    const remainingTime = Math.ceil((MAX_RECONNECT_TIME - elapsedTime) / 1000);
+    console.log(`[${botPhone}] Reconnecting WebSocket (attempt ${websocketState[botPhone].retryCount}, ${remainingTime}s remaining)...`);
 
     // Close old WebSocket if it exists
     const oldWs = websocketState[botPhone].ws;
